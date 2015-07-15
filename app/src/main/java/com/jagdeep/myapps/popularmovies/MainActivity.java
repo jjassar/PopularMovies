@@ -21,6 +21,7 @@ import android.net.NetworkInfo;
 import android.os.AsyncTask;
 
 import android.os.Bundle;
+import android.os.PersistableBundle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
@@ -35,6 +36,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -53,12 +55,17 @@ public class MainActivity extends AppCompatActivity {
     List<String> movie_backdrops;
 
     JSONArray jsonArray;
-    JSONObject jsonObject;
+    JSONObject jsonObject = null;
     JSONObject[] jsonObjects;
+
+
+
+    MyParcelable myParcelable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.act_grid_movies);
 
         gridview = (GridView) findViewById(R.id.gridview);
@@ -70,6 +77,45 @@ public class MainActivity extends AppCompatActivity {
 
 
 
+        if(savedInstanceState == null || !savedInstanceState.containsKey("json"))
+        {
+
+
+
+           if(checknet())
+             {
+                 Toast.makeText(this,"Avail",Toast.LENGTH_LONG).show();
+
+                 new ConnectTask(this).execute(1);
+
+             }
+           else
+             {
+                 Toast.makeText(this, "No Internet Connection", Toast.LENGTH_LONG).show();
+             }
+
+
+        }
+        else
+        {
+            myParcelable = savedInstanceState.getParcelable("json");
+           // Toast.makeText(this, myParcelable.js,Toast.LENGTH_LONG).show();
+            try {
+                jsonObject = new JSONObject(myParcelable.js);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            catch (NullPointerException e)
+            {
+                e.printStackTrace();
+            }
+
+            loadJsonData();
+
+        }
+
+
+
         /*  Access using themoviedbapi Library
             MovieTask m1 = new MovieTask();
             m1.execute(1);
@@ -77,59 +123,52 @@ public class MainActivity extends AppCompatActivity {
 
 
 
-        if(checknet())
-        {
-            Tmdbclient c1 = new Tmdbclient(this);
-            try {
-                jsonObject = c1.execute(1).get();
-                loadJsonData();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } catch (ExecutionException e) {
-                e.printStackTrace();
-            }
+    }
 
-        }
-        else
-        {
-            Toast.makeText(this, "No Internet Connection", Toast.LENGTH_LONG).show();
-        }
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
 
-
-
+        super.onSaveInstanceState(outState);
+        outState.putParcelable("json",myParcelable);
 
     }
 
+
+
+// ------------ Result received from ConnectTask  --
+    public void onRes(JSONObject j)
+    {
+        jsonObject = j;
+        if(jsonObject == null)
+        {
+            Toast.makeText(this,"Connection TimeOut",Toast.LENGTH_LONG).show();
+        }
+
+        else {
+            loadJsonData();
+            myParcelable = new MyParcelable(jsonObject.toString());
+
+        }
+    }
+
+
+
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+
+    }
+
+    /* ----    Init Userinterface with Grid View -------*/
     private void loadUi() {
         gridview.setAdapter(new ImageAdapter(this, movie_backdrops));
 
         gridview.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View v,
                                     int position, long id) {
-                Toast.makeText(MainActivity.this, "" + position,
-                        Toast.LENGTH_SHORT).show();
 
-                Intent in = new Intent(MainActivity.this, MovieDetals.class);
-                Bundle b = new Bundle();
-
-                try {
-                    b.putInt("id", jsonObjects[position].getInt("id"));
-                    b.putString("original_title", jsonObjects[position].getString("original_title"));
-                    b.putString("overview", jsonObjects[position].getString("overview"));
-                    b.putString("vote_average", jsonObjects[position].getString("vote_average"));
-                    b.putString("release_date", jsonObjects[position].getString("release_date"));
-                    b.putString("poster_path", jsonObjects[position].getString("poster_path"));
-
-
-
-
-
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
-                in.putExtras(b);
-                startActivity(in);
-
+                launchDetailsAct(position);
 
             }
         });
@@ -138,6 +177,31 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+
+/* ---- Launch New Activity to Show Details of movie -------*/
+    private void launchDetailsAct(int position)
+    {
+        Intent in = new Intent(MainActivity.this, MovieDetals.class);
+        Bundle b = new Bundle();
+
+        try {
+            b.putInt("id", jsonObjects[position].getInt("id"));
+            b.putString("original_title", jsonObjects[position].getString("original_title"));
+            b.putString("overview", jsonObjects[position].getString("overview"));
+            b.putString("vote_average", jsonObjects[position].getString("vote_average"));
+            b.putString("release_date", jsonObjects[position].getString("release_date"));
+            b.putString("poster_path", jsonObjects[position].getString("poster_path"));
+
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        in.putExtras(b);
+        startActivity(in);
+    }
+
+
+/* --------------- Fetch Data from JSON -----------------------*/
     private void loadJsonData()
     {
         try {
@@ -169,8 +233,13 @@ public class MainActivity extends AppCompatActivity {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+        catch (NullPointerException e)
+        {
+            e.printStackTrace();
+        }
     }
 
+/* ----------- create menu --------------*/
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -178,6 +247,7 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+/* ----------- option item selected -------------*/
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         // Handle action bar item clicks here. The action bar will
@@ -188,16 +258,9 @@ public class MainActivity extends AppCompatActivity {
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_most_popular) {
 
-            Tmdbclient c1 = new Tmdbclient(this);
-            try {
-                jsonObject = c1.execute(1).get();
-                loadJsonData();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } catch (ExecutionException e) {
-                e.printStackTrace();
-            }
+         //   executeTmdbClient(1);
 
+            new ConnectTask(this).execute(1);
 
             /* Async task if loading from themoviedbapi Library
             MovieTask m1 = new MovieTask();
@@ -208,29 +271,47 @@ public class MainActivity extends AppCompatActivity {
 
         if (id == R.id.action_highest_rating) {
 
-            Tmdbclient c1 = new Tmdbclient(this);
-            try {
-                jsonObject = c1.execute(2).get();
-                loadJsonData();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } catch (ExecutionException e) {
-                e.printStackTrace();
-            }
+         //   executeTmdbClient(2);
 
+            new ConnectTask(this).execute(2);
 
           /*  MovieTask m1 = new MovieTask();
             m1.execute(2);*/
             return true;
         }
 
-
         return super.onOptionsItemSelected(item);
     }
 
 
+/* ---------- Check internet connection --------------*/
+    public Boolean checknet()
+    {
 
-// Async task using themoviedbapi Library ---------------------
+        Boolean status = false;
+        ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+        NetworkInfo nf=cm.getActiveNetworkInfo();
+       //  nf != null & nf.isConnectedOrConnecting();
+
+        if(nf == null)
+        {
+            return false;
+        }
+        else {
+            return true;
+        }
+
+
+    }
+
+
+
+
+
+
+// Async task using themoviedbapi Library (Not Using Right Now ) ---------------------
+
+/*
     private class MovieTask extends AsyncTask<Integer, List<MovieDb>, Boolean>
     {
         @Override
@@ -296,21 +377,11 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    */
+
 
     // Test Internet Connectivity on Application Launch
 
-    public Boolean checknet()
-    {
-        ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
-        NetworkInfo nf=cm.getActiveNetworkInfo();
-        if(nf==null)
-        {
-            return false;
-        }
-        else{
-            return true;
-        }
 
-    }
 
 }
